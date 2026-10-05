@@ -1,0 +1,71 @@
+---
+description: README.md content requirements for ls-toto
+globs: ["README.md"]
+alwaysApply: false
+---
+
+# README Requirements
+
+Keep `README.md` user-focused. Align with `project-overview.mdc` and `implementation.mdc`.
+
+## Required sections (order)
+
+1. **Title & description** — GNU `ls`-compatible for a core option set; lists
+   directory contents (or the named files) sorted by name; buffered raw
+   `write(2)` output; exits when the listing is complete.
+
+2. **Build**
+   - `make`, `make debug`, `make test`, `make clean`, optional `make install`
+   - Artefacts: **`build/ls-toto`**, **`build/ls-toto-debug`**,
+     **`build/tests/test_core`**; mention `build/.gitkeep` / `build/tests/.gitkeep`
+   - **Linux / WSL:** `make clean && make && make test` then `./build/ls-toto`
+   - **Windows:** Git Bash or MSYS2 **UCRT64**; `pacman -S make mingw-w64-ucrt-x86_64-gcc`
+   - Explain the Makefile **POSIX header probe** (`dirent.h`, `sys/stat.h`,
+     `pwd.h`, `grp.h`): POSIX vs Win32 filesystem path; UCRT64 `gcc` on `PATH`
+   - Native Windows `.exe` under `build/` runs in UCRT64, Git Bash, cmd, PowerShell
+
+3. **Usage**
+   - Show invocations as `./build/ls-toto` (or installed `ls-toto`)
+   - No operands → list `.`; operands may be files or directories
+   - Table of supported options: `-a`, `-A`, `-l`, `-1`, `-r`, `-R`, `-t`,
+     `-S`, `-h`, `-d`, `-F` with their long forms where they exist
+   - Short options combine (`-lah`); `--` ends option parsing
+   - **`-h` means human-readable sizes** (with `-l`), not help
+   - `--help` / `--h` and `--version` / `--v`; help anywhere in argv wins over version
+   - Columns on a terminal (width from `COLUMNS`, default 80); one name per
+     line when piped or with `-1`
+   - Sorting is byte-wise (C locale), not locale-aware
+   - Windows build limitations: owner and group shown as `-`, permissions
+     synthesized from file attributes, no symlink display
+
+4. **Exit codes**
+   - `0`: success — listing printed (or `--help` / `--version`)
+   - `1`: minor problem — e.g. subdirectory unreadable during `-R`
+   - `2`: serious problem — inaccessible operand, invalid option, write or
+     allocation failure
+   - stderr: `ls-toto: cannot access '<path>': <reason>`,
+     `ls-toto: cannot open directory '<path>': <reason>`,
+     `ls-toto: <context>: <reason>` for other system errors
+
+5. **Layout** — brief tree matching actual repo (include `LICENSE.txt`,
+   `c_version.txt`, `build/.gitkeep`, `build/tests/.gitkeep`):
+   - `include/ls_toto.h` + `ls_toto_{cli,emit,fs,sort,format,out}.h`
+   - `src/main.c` + `ls_toto_{cli,emit,fs,sort,format,out,list}.c`
+   - `tests/test_runner.c` + `test_<module>_*.c` → `build/tests/test_core`
+   - Note that Windows builds without the POSIX headers skip the POSIX
+     filesystem test (`SKIP:`)
+
+## Do not document in README
+
+- Internal chain-of-thought comment blocks
+- `-Werror` flag rationale (lives in `Makefile` comments)
+- Author/licence banners on `--version` (binary prints `ls-toto <version>` only)
+- `argv_has_exact()`, `try_write_all()`, or other static helper names unless
+  briefly needed for contributors
+- Options that are not implemented (`--color`, `-i`, `-n`, etc.)
+
+## Style
+
+- Fenced `sh` blocks for commands.
+- No emojis unless the user asks.
+- Keep prose minimal.

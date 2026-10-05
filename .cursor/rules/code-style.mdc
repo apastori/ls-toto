@@ -1,0 +1,123 @@
+---
+description: C code style, formatting, naming, and quality rules for ls-toto
+globs: ["src/**/*.c", "include/**/*.h", "tests/**/*.c", "tests/**/*.h", "Makefile"]
+alwaysApply: false
+---
+
+# Code Style & Quality
+
+## Standard & flags
+
+- **C11** (`-std=c11`)
+- `-Wall -Wextra -Wpedantic -Werror`
+- `-D_XOPEN_SOURCE=700` (POSIX.1-2008 + XSI: `st_blocks`, `S_ISVTX`, `lstat`, `readlink`)
+- `-DLS_TOTO_WIN32_FS` when the Makefile POSIX header probe fails (Windows/Git Bash)
+- Zero warnings — all treated as errors
+
+## Formatting
+
+- **Indentation:** 4 spaces. No tabs.
+- **Function definitions:** opening brace on its own line.
+- **Line length:** prefer ≤80 characters where practical.
+- **Files end with a single newline.**
+
+## Module conventions
+
+- **`src/main.c`** stays thin — call `ls_toto_parse_args()`, dispatch to
+  help/version, call `ls_toto_run()`, and exit. No filesystem, sorting, or
+  formatting logic.
+- **`include/ls_toto.h`** — version string, exit code enum, and
+  `ls_toto_run()` declaration.
+- **`include/ls_toto_cli.h`** — CLI flag string macros (`LS_TOTO_ARG_*`),
+  `struct ls_toto_opts`, parser declarations.
+- **One concern per `src/ls_toto_*.c`** (`cli`, `emit`, `fs`, `sort`, `format`,
+  `out`, `list`) — do not collapse back into a monolith without reason.
+- **Platform code lives only in `ls_toto_fs.c`** (plus `isatty` handling in
+  `ls_toto_list.c` / `ls_toto_out.c` if needed). Every other module works on the
+  platform-neutral `struct ls_toto_entry`.
+- **Platform guard:** `#ifdef LS_TOTO_WIN32_FS` in source and test files; do
+  not use bare `#if defined(_WIN32)` alone (Cygwin/MSYS with the POSIX headers
+  should keep the POSIX path).
+- **Pure modules** (`ls_toto_cli.c`, `ls_toto_sort.c`, `ls_toto_format.c`)
+  must not perform I/O or call platform APIs, so they can be linked into tests.
+
+## Naming
+
+| Kind | Style | Examples |
+|------|-------|----------|
+| Functions | `snake_case` | `ls_toto_run`, `ls_toto_parse_args`, `argv_has_exact`, `print_help` |
+| Types | `snake_case` structs, no typedef-hiding of pointers | `struct ls_toto_opts`, `struct ls_toto_entry` |
+| Macros / constants | `UPPER_SNAKE_CASE` | `LS_TOTO_VERSION_STRING`, `LS_TOTO_ARG_ALL`, `LS_TOTO_OUT_BUFSZ` |
+| Headers | `LS_TOTO_*_H` guards | `LS_TOTO_H`, `LS_TOTO_CLI_H`, `LS_TOTO_FS_H` |
+
+Public API prefix: **`ls_toto_`** for module entry points.
+
+## Memory
+
+- Heap allocation is **allowed** (directory listings are unbounded), unlike
+  whoami-toto.
+- Entry arrays grow by **doubling** (`realloc`); start from a small fixed
+  capacity.
+- Copy names with **`ls_toto_strdup()`** (`malloc` + `memcpy`) — `strdup` is
+  not ISO C11.
+- **Every** `malloc` / `realloc` result is checked; on failure call
+  `ls_toto_emit_error("malloc")` and exit with `LS_TOTO_EXIT_SERIOUS`.
+- Free every entry array and name before returning from a directory listing;
+  recursion (`-R`) must not keep parent arrays alive longer than needed.
+- `getpwuid()` / `getgrgid()` return **static internal buffers** — do not
+  `free()` them; copy the name into the entry's fixed-size owner/group field
+  before the next lookup.
+- `make debug` (ASan + UBSan) must run clean: no leaks, no overflows.
+
+## Output rules (`ls_toto_out.c`)
+
+- All listing output goes through the buffered writer: a static
+  `char buf[LS_TOTO_OUT_BUFSZ]` (8 KiB), appended with `ls_toto_out_*()` and
+  flushed with `try_write_all(STDOUT_FILENO, buf, len)`.
+- Flush when the buffer would overflow and once before exit.
+- No `printf` / `fprintf` / `puts` / `fputs` / `fwrite` for listing output.
+  `snprintf` into a local buffer is fine for numeric fields.
+- `--help` / `--version` text may use stdio.
+- `exit()` on unrecoverable error (write / allocation failure) is acceptable.
+
+## Errors
+
+- **stderr only:** `ls-toto: <context>: <strerror(errno)>` for system errors.
+- **stderr only:** `ls-toto: cannot access '<path>': <strerror(errno)>`.
+- **stderr only:** `ls-toto: cannot open directory '<path>': <strerror(errno)>`.
+- **stderr only:** `ls-toto: invalid option -- '<c>'` or
+  `ls-toto: unrecognized option '<arg>'`, each followed by the hint line.
+- Save `errno` immediately after the failing call, before any other libc call.
+- Implemented in `ls_toto_emit.c`.
+
+## Comments
+
+- Chain-of-thought block at top of each `src/*.c` and test file.
+- Contract comments on non-trivial functions: preconditions, postconditions,
+  return value, error behaviour, ownership of returned memory.
+- Comment non-obvious decisions (platform guards, static-buffer lifetime of
+  `getpwuid`/`getgrgid`, six-month time cutoff, Makefile header probe); not
+  obvious code.
+
+## Tests
+
+- Plain `assert()` — no external test framework.
+- One scenario per `tests/test_<module>_<name>.c`; runner in `tests/test_runner.c`.
+- Print `PASS: <name>` on success; `SKIP: <name>` for POSIX-only cases when
+  `LS_TOTO_WIN32_FS` is defined.
+
+## What not to do
+
+- Do not compile as C++.
+- Do not link extra libraries beyond **libc** (POSIX) or **libc + kernel32**
+  (Win32 filesystem path).
+- Do not use `gets`, unbounded `scanf`, `strcpy` / `strcat` / `sprintf` into
+  fixed buffers, or ignore `write()` byte counts.
+- Do not use `strdup`, `scandir`, or `getopt_long` (not ISO C / GNU
+  extensions) — option parsing is hand-rolled.
+- Do not call `setlocale()` or use locale-aware collation (`strcoll`).
+- Do not use stdio for listing output — project standard is the buffered
+  raw `write()` writer.
+- Do not call `getpwuid_r` / `getgrgid_r` unless thread-safety is explicitly
+  required.
+- Do not add options beyond the supported set in `project-overview.mdc`.

@@ -1,0 +1,228 @@
+---
+description: Canonical C11 implementation for ls-toto — module layout, filesystem access, sorting, formatting, write, and exit behaviour
+globs: ["src/**/*.c", "include/**/*.h"]
+alwaysApply: false
+---
+
+# ls-toto — Implementation (C11)
+
+## Module layout
+
+| Path | Role |
+|------|------|
+| `include/ls_toto.h` | `LS_TOTO_VERSION_STRING`, `LS_TOTO_EXIT_*` enum, `ls_toto_run()` declaration |
+| `include/ls_toto_cli.h` | `LS_TOTO_ARG_*` flag macros, `struct ls_toto_opts`, `enum ls_toto_parse_status`, `ls_toto_parse_args()`, `print_help()`, `print_version()` |
+| `include/ls_toto_emit.h` | `ls_toto_emit_error()`, `ls_toto_emit_cannot_access()`, `ls_toto_emit_cannot_open_dir()`, `ls_toto_emit_invalid_option()`, `ls_toto_emit_unrecognized_option()` |
+| `include/ls_toto_fs.h` | platform-neutral `struct ls_toto_entry`, `enum ls_toto_ftype`, `ls_toto_fs_stat()`, `ls_toto_fs_read_dir()`, `ls_toto_entries_free()`, `ls_toto_strdup()` |
+| `include/ls_toto_sort.h` | `ls_toto_sort_entries()` |
+| `include/ls_toto_format.h` | `ls_toto_format_mode()`, `ls_toto_format_size_human()`, `ls_toto_format_time()`, `ls_toto_classify_suffix()`, `ls_toto_print_long()`, `ls_toto_print_columns()`, `ls_toto_print_one_per_line()` |
+| `include/ls_toto_out.h` | `ls_toto_out_bytes()`, `ls_toto_out_str()`, `ls_toto_out_char()`, `ls_toto_out_flush()` |
+| `src/main.c` | `main()` only — parse args, dispatch help/version/errors, call `ls_toto_run()` |
+| `src/ls_toto_cli.c` | `argv_has_exact()`, meta-flag scan, option parser, help/version text (pure) |
+| `src/ls_toto_emit.c` | stderr diagnostics |
+| `src/ls_toto_fs.c` | POSIX or Win32 stat + directory read into `struct ls_toto_entry` arrays |
+| `src/ls_toto_sort.c` | `qsort` comparators: name, mtime, size; reverse (pure) |
+| `src/ls_toto_format.c` | mode string, sizes, times, `-F` suffixes, long / column / one-per-line layout (pure apart from calling `ls_toto_out_*`) |
+| `src/ls_toto_out.c` | static 8 KiB output buffer + `try_write_all()` |
+| `src/ls_toto_list.c` | `ls_toto_run()` — operand ordering, headers, `total` line, `-R` recursion |
+
+Each `.c` file opens with a **chain-of-thought comment block** (responsibility,
+syscalls, heap usage, C standard). Preserve that pattern when adding files.
+
+## C standard
+
+**ISO C11** (`-std=c11`), `-D_XOPEN_SOURCE=700` for POSIX.1-2008 + XSI where
+available (`opendir`, `readdir`, `lstat`, `stat`, `readlink`, `getpwuid`,
+`getgrgid`, `isatty`, `write`, `st_blocks`, `S_ISVTX`).
+
+Platform selection is via Makefile define **`LS_TOTO_WIN32_FS`**
+(set when a compile probe for `<dirent.h>`, `<sys/stat.h>`, `<pwd.h>`, or
+`<grp.h>` fails).
+
+## Data model (`ls_toto_fs.h`)
+
+```c
+enum ls_toto_ftype { LS_TOTO_FT_REG, LS_TOTO_FT_DIR, LS_TOTO_FT_LNK,
+                     LS_TOTO_FT_FIFO, LS_TOTO_FT_SOCK, LS_TOTO_FT_CHR,
+                     LS_TOTO_FT_BLK };
+
+struct ls_toto_entry {
+    char              *name;         /* heap, ls_toto_strdup */
+    char              *link_target;  /* heap or NULL (POSIX symlinks only) */
+    enum ls_toto_ftype type;
+    unsigned int       perm;         /* low 12 bits: 07777 */
+    unsigned long      nlink;
+    char               owner[LS_TOTO_NAME_MAX];
+    char               group[LS_TOTO_NAME_MAX];
+    long long          size;
+    long long          blocks;       /* 512-byte units */
+    time_t             mtime;
+};
+```
+
+The type/permission split keeps `ls_toto_format_mode()` platform-independent
+and testable without `<sys/stat.h>`.
+
+## Filesystem access (`ls_toto_fs.c`)
+
+### POSIX path (default on Linux/WSL; when all probed headers exist)
+
+```
+operand:   stat() unless -l or -d (then lstat())      → GNU follows symlink operands
+in dir:    opendir(path); while readdir():
+             skip "." / ".." unless -a; skip ".*" unless -a or -A
+             lstat(dir + "/" + name) into entry
+           closedir()
+owner:     getpwuid(st_uid) → copy pw_name, else snprintf("%u", uid)
+group:     getgrgid(st_gid) → copy gr_name, else snprintf("%u", gid)
+symlink:   readlink() into heap buffer (grow until it fits), NUL-terminate
+```
+
+`getpwuid()` / `getgrgid()` return pointers into **static internal buffers** —
+do not `free()` them; copy before the next call.
+
+### Windows path (`LS_TOTO_WIN32_FS`)
+
+```
+operand:   GetFileAttributesExA(path)
+in dir:    FindFirstFileA(dir + "\\*") / FindNextFileA / FindClose
+           same "." / ".." / dotfile filtering as POSIX
+type:      FILE_ATTRIBUTE_DIRECTORY → DIR, else REG (reparse points not shown as links)
+perm:      0444 | (READONLY ? 0 : 0200) | (DIR or .exe/.bat/.cmd/.com ? 0111 : 0)
+nlink:     1;  owner/group: "-"
+size:      ((long long)nFileSizeHigh << 32) | nFileSizeLow;  blocks = ceil(size / 512)
+mtime:     FILETIME → (ticks - 116444736000000000) / 10000000
+errors:    map GetLastError(): FILE/PATH_NOT_FOUND → ENOENT, ACCESS_DENIED → EACCES,
+           other → EIO; set errno, then use the same emit functions
+```
+
+Kernel32 only — no extra libraries.
+
+## Argument handling (`src/main.c`, `src/ls_toto_cli.c`)
+
+Flag macros in `ls_toto_cli.h`:
+
+- `LS_TOTO_ARG_HELP` / `LS_TOTO_ARG_HELP_SHORT` → `--help` / `--h`
+- `LS_TOTO_ARG_VERSION` / `LS_TOTO_ARG_VERSION_SHORT` → `--version` / `--v`
+- `LS_TOTO_ARG_ALL`, `LS_TOTO_ARG_ALMOST_ALL`, `LS_TOTO_ARG_REVERSE`,
+  `LS_TOTO_ARG_RECURSIVE`, `LS_TOTO_ARG_HUMAN`, `LS_TOTO_ARG_DIRECTORY`,
+  `LS_TOTO_ARG_CLASSIFY` → `--all`, `--almost-all`, `--reverse`,
+  `--recursive`, `--human-readable`, `--directory`, `--classify`
+- `LS_TOTO_ARG_END_OPTS` → `--`
+
+The meta-flag scan uses static **`argv_has_exact()`** (no hardcoded strings in
+the scan logic). `ls_toto_parse_args()` is pure: it fills `struct ls_toto_opts`,
+compacts operands to the front of `argv[1…]` in order, and returns an
+`enum ls_toto_parse_status` (`OK`, `HELP`, `VERSION`, `BAD_SHORT`, `BAD_LONG`)
+with the offending char / argument stored in `opts`. `main()` emits diagnostics.
+
+1. Scan `argv[1…]` up to `--` for help flags → help + exit 0 (**wins** over version).
+2. Else scan for version flags → `ls-toto <version>\n` + exit 0.
+3. Else parse every argument (GNU permutation — options may follow operands):
+   - after `--` → operand
+   - `--name` → match the long table, else `BAD_LONG`
+   - `-` alone → operand
+   - `-abc` → each char in `aAl1rRtShdF`, else `BAD_SHORT`
+   - anything else → operand
+4. Conflicts: last of `-l` / `-1` wins; last of `-t` / `-S` wins; last of
+   `-a` / `-A` wins.
+5. Bad option → emit + hint, exit 2. Else call `ls_toto_run()` with the
+   operands (`.` if none).
+
+Error message format for bad options:
+
+```
+ls-toto: invalid option -- 'z'
+Try 'ls-toto --help' for more information.
+```
+
+```
+ls-toto: unrecognized option '--foo'
+Try 'ls-toto --help' for more information.
+```
+
+Both lines go to **stderr**.
+
+## Listing algorithm (`ls_toto_run`)
+
+1. Stat every operand. Failure → `cannot access`, status = SERIOUS, skip it.
+2. Split into files (non-directories, or everything with `-d`) and directories.
+3. Sort each group with `ls_toto_sort_entries()`; print files first as one
+   listing (no `total` line).
+4. Print each directory: header `path:` when there was more than one operand,
+   any file was printed, or `-R` is set; blank line between sections.
+5. Directory listing: `ls_toto_fs_read_dir()` → sort → `total N` (long format
+   only) → layout. Open failure → `cannot open directory`; SERIOUS for an
+   operand, MINOR during recursion.
+6. `-R`: after printing a directory, recurse into child entries of type DIR
+   (never `.` / `..`, never followed symlinks), freeing the child array first
+   where possible.
+7. `ls_toto_out_flush()`, return the worst status seen.
+
+## Sorting (`ls_toto_sort.c`)
+
+- Default: `strcmp` on names (C locale; no `setlocale`).
+- `-t`: newer `mtime` first; ties by name.
+- `-S`: larger `size` first; ties by name.
+- `-r`: reverse the final comparator result (applies to all keys).
+
+## Output
+
+- All listing bytes go through `ls_toto_out_*()` into a static 8 KiB buffer,
+  flushed with `try_write_all(STDOUT_FILENO, …)` — no `printf` / `puts` on this
+  path. `snprintf` into local buffers for numeric fields is fine.
+- **Layout selection:** `-l` → long; else `-1` or `!isatty(STDOUT_FILENO)` →
+  one per line; else columns.
+- **Columns:** width from `COLUMNS` (positive integer) else 80. Choose the
+  largest column count whose per-column max widths plus 2-space gutters fit;
+  fill **down** then across; no trailing spaces.
+- **Long format:** `mode nlink owner group size mtime name[ -> target]`;
+  `nlink` and `size` right-aligned, `owner` / `group` left-aligned, widths
+  computed per listing. Mode string is 10 chars (`drwxr-xr-x`, with `s`/`S`,
+  `t`/`T` for setuid/setgid/sticky).
+- **Time:** `strftime` with `localtime()`; `%b %e %H:%M` when within the past
+  six months (15778476 s) and not in the future, else `%b %e  %Y`.
+- **`total N`:** sum of `blocks` in 1 KiB units (`ceil(blocks * 512 / 1024)`);
+  human-readable with `-h`.
+- **`-h`:** powers of 1024, rounded **up**; < 1024 printed as plain bytes; one
+  decimal below 10 (`1.0K`, `1.5M`), none from 10 up (`10K`, `234M`).
+- **`-F`:** `/` dir, `@` symlink (omitted in long format, where `-> target` is
+  shown), `|` FIFO, `=` socket, `*` regular file with any execute bit.
+- `--help` and `--version` text may use `printf` / `fputs` to stdout.
+
+## Exit codes
+
+| Code | Constant | Meaning |
+|------|----------|---------|
+| `0` | `LS_TOTO_EXIT_OK` | Listing printed; or `--help` / `--version` |
+| `1` | `LS_TOTO_EXIT_MINOR` | Cannot open a subdirectory during `-R` |
+| `2` | `LS_TOTO_EXIT_SERIOUS` | Inaccessible operand, bad option, write/allocation failure |
+
+## Error messages
+
+All diagnostics on **stderr**:
+
+- System error: `ls-toto: <context>: <strerror(errno)>` (`ls_toto_emit_error`)
+- Missing operand: `ls-toto: cannot access '<path>': <strerror(errno)>`
+- Unreadable directory: `ls-toto: cannot open directory '<path>': <strerror(errno)>`
+- Bad option: `ls-toto: invalid option -- '<c>'` /
+  `ls-toto: unrecognized option '<arg>'` + hint line
+
+Flush pending stdout (`ls_toto_out_flush()`) before writing a diagnostic so
+output ordering matches GNU `ls` when both streams go to a terminal.
+
+Never print errors to stdout.
+
+## `try_write_all()` contract
+
+Static helper in `ls_toto_out.c`:
+
+- **Precondition:** `buf != NULL`, `len > 0`
+- **Postcondition:** all `len` bytes written, or process exited
+- On `EINTR`: retry immediately
+- On short write: advance and continue
+- On other errors: `ls_toto_emit_error("write")`, `exit(LS_TOTO_EXIT_SERIOUS)`
+
+## Naming
+
+Public run entry point: **`ls_toto_run()`** (not bare `run`).

@@ -1,0 +1,119 @@
+---
+description: Project identity, purpose, and high-level goals for `ls-toto`
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# ls-toto — Project Overview
+
+## What This Project Is
+
+`ls-toto` is a faithful CLI replica of the GNU Core Utilities `ls` command.
+It lists information about the FILEs given as operands (the current directory
+by default), sorted alphabetically unless another sort is requested, then exits.
+It does not loop and does not watch the filesystem.
+
+Filesystem access (chosen at **build time** by the Makefile):
+
+| Build | Mechanism | Owner / group |
+|-------|-----------|---------------|
+| POSIX (`dirent.h`, `sys/stat.h`, `pwd.h`, `grp.h` all available) | `opendir`/`readdir`, `lstat`/`stat`, `readlink` | `getpwuid()` / `getgrgid()`, numeric fallback |
+| Windows fallback (any of those headers missing) | `FindFirstFileA`/`FindNextFileA`, `GetFileAttributesExA` | printed as `-` |
+
+## Binary Name
+
+The compiled binary must always be named **`ls-toto`**. Never rename it.
+It is produced at **`build/ls-toto`** (MinGW may also emit
+`build/ls-toto.exe`; that is the same program). The unit-test binary is
+**`build/tests/test_core`**.
+
+## Platforms
+
+| Platform | Build environment | Notes |
+|----------|-------------------|-------|
+| **Linux / WSL** | `gcc`/`clang` + GNU Make | POSIX path; full unit tests |
+| **Windows** | **MSYS2 UCRT64** or **Git Bash** + UCRT64 `gcc` on `PATH` | Makefile auto-selects Win32 filesystem path when the POSIX header probe fails |
+| **Git Bash** | Put `/c/msys64/ucrt64/bin` **before** other toolchains on `PATH` | Avoid minimal MinGW without POSIX headers; see `toolchain-structure.mdc` |
+
+Binaries are **not portable** across operating systems — build separately on Linux and on Windows.
+
+## Scope — Keep It Minimal
+
+Supporting behaviour:
+
+- Built-in `--help` / `--h` and `--version` / `--v` (detected anywhere in `argv`; help wins if both appear)
+- Core short options, combinable (`-la`), with `--` ending option parsing:
+
+| Option | Long form | Meaning |
+|--------|-----------|---------|
+| `-a` | `--all` | do not ignore entries starting with `.` |
+| `-A` | `--almost-all` | like `-a` but omit `.` and `..` |
+| `-l` | — | long listing format |
+| `-1` | — | one entry per line |
+| `-r` | `--reverse` | reverse sort order |
+| `-R` | `--recursive` | list subdirectories recursively |
+| `-t` | — | sort by modification time, newest first |
+| `-S` | — | sort by file size, largest first |
+| `-h` | `--human-readable` | with `-l`, print sizes like `1.5K`, `234M` |
+| `-d` | `--directory` | list directories themselves, not their contents |
+| `-F` | `--classify` | append indicator (`/`, `*`, `@`, `\|`, `=`) |
+
+- No operands → list `.`
+- Operands are files or directories; file operands are listed first, then each
+  directory with a `dir:` header when more than one operand is given
+- Columns when stdout is a tty (width from `COLUMNS`, default 80); one name per
+  line otherwise
+- Name sort uses `strcmp` (C locale only)
+- CLI flag strings live in `ls_toto_cli.h` (`LS_TOTO_ARG_*`); parsing is
+  hand-rolled in `ls_toto_parse_args()` using `argv_has_exact()` for meta flags
+
+**Do not add:**
+
+- Interactive or TUI modes
+- stdin reading
+- `--color`, `-i`, `-n`, `-g`, `-o`, `-s`, `-U`, `-X`, `-c`, `-u`, or any other
+  option outside the table above
+- Locale-aware sorting or `setlocale()`
+- Logging or debug output in normal operation
+- Single-dash `-v` as version (`-h` is **human-readable**, never help; only
+  `--help`, `--h`, `--version`, and `--v` are meta flags)
+- Any feature that would break GNU `ls` behavioural compatibility for the
+  supported options
+
+## Behavioural Contract
+
+| Invocation | Output | Exit |
+|---|---|---|
+| `ls-toto` | names in `.` (dotfiles hidden), sorted by name | `0` |
+| `ls-toto -la` | `total N` + long lines including `.` and `..` | `0` |
+| `ls-toto file dir` | `file`, blank line, `dir:` + its contents | `0` |
+| `ls-toto -d dir` | `dir` itself | `0` |
+| `ls-toto --version` / `--v` | prints `ls-toto <version>\n` | `0` |
+| `ls-toto --help` / `--h` | prints usage on stdout | `0` |
+| `ls-toto missing` | stderr: `ls-toto: cannot access 'missing': <reason>` | `2` |
+| `ls-toto -z` | stderr: `ls-toto: invalid option -- 'z'` + hint | `2` |
+| `ls-toto --foo` | stderr: `ls-toto: unrecognized option '--foo'` + hint | `2` |
+| Subdirectory unreadable during `-R` | stderr: `ls-toto: cannot open directory '<path>': <reason>` | `1` |
+| Write / allocation failure | stderr: `ls-toto: <context>: <reason>` | `2` |
+
+`--help` anywhere in `argv` wins over `--version`. Meta flags are not
+recognised after `--`.
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success — listing printed (or `--help` / `--version`) |
+| `1` | Minor problem — e.g. cannot open a subdirectory during `-R` |
+| `2` | Serious problem — inaccessible operand, invalid option, write or allocation failure |
+
+## Project Layout (summary)
+
+```
+build/     — ls-toto (+ .o); build/tests/test_core; .gitkeep markers
+include/   — ls_toto.h + ls_toto_{cli,emit,fs,sort,format,out}.h
+src/       — main.c + ls_toto_{cli,emit,fs,sort,format,out,list}.c
+tests/     — test_runner.c + test_<module>_*.c / .h → binary build/tests/test_core
+```
+
+See `implementation.mdc`, `toolchain-structure.mdc`, and `testing.mdc` for detail.

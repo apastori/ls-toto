@@ -1,0 +1,195 @@
+---
+description: C toolchain, build system, and directory structure for ls-toto
+globs: ["Makefile", "*.c", "*.h", "src/**/*.c", "include/**/*.h", "tests/**/*.c"]
+alwaysApply: false
+---
+
+# Toolchain & Project Structure
+
+## Language
+
+**C11** (`-std=c11`). **No C++.**
+
+## Compiler flags (from `Makefile`)
+
+```
+-std=c11 -Wall -Wextra -Wpedantic -Werror
+-D_XOPEN_SOURCE=700
+-Iinclude
+-O2          # release (CFLAGS)
+```
+
+When the POSIX header probe fails, the Makefile also adds:
+
+```
+-DLS_TOTO_WIN32_FS   # FindFirstFileA / GetFileAttributesExA (kernel32, linked by default)
+```
+
+No extra `LDFLAGS` are needed on either path.
+
+Debug target uses `CFLAGS_DEBUG`: `-g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer`.
+
+## Artefact layout
+
+All build outputs live under **`build/`**; never write binaries at the repo root
+or into `tests/`.
+
+| Artefact | Path |
+|----------|------|
+| Release binary | `build/ls-toto` (`.exe` on Windows) |
+| Debug binary | `build/ls-toto-debug` |
+| Main objects | `build/*.o` (from `src/*.c`) |
+| Test binary | `build/tests/test_core` |
+| Test objects | `build/tests/*.o` (from `tests/*.c` and the linked pure modules) |
+
+`build/.gitkeep` and `build/tests/.gitkeep` keep the directories in git when empty.
+`make clean` removes objects and binaries but leaves the `.gitkeep` files.
+
+## Compiler selection
+
+`Makefile` picks **gcc** if available, else **clang**:
+
+```makefile
+CC := $(shell command -v gcc >/dev/null 2>&1 && echo gcc || echo clang)
+```
+
+On **`OS=Windows_NT`**, if `C:/msys64/ucrt64/bin/gcc` exists, it becomes `CC`
+(so Git Bash does not use a minimal MinGW without POSIX headers).
+
+## Platform probe (POSIX headers)
+
+Before compiling, the Makefile preprocesses a snippet containing:
+
+```c
+#include <dirent.h>
+#include <sys/stat.h>
+#include <pwd.h>
+#include <grp.h>
+```
+
+- **Probe succeeds** → POSIX filesystem path in `ls_toto_fs.c`; all unit tests run.
+- **Probe fails** (any header missing) → `-DLS_TOTO_WIN32_FS`; POSIX-only tests `SKIP`.
+
+Typical outcomes:
+
+| Environment | Probe | Filesystem path |
+|-------------|-------|-----------------|
+| Linux / WSL | success | `opendir`/`readdir`, `lstat`, `getpwuid`/`getgrgid` |
+| MSYS2 UCRT64 with full gcc | fail* | `FindFirstFileA` / `GetFileAttributesExA` |
+| Git Bash (minimal MinGW) | fail | `FindFirstFileA` / `GetFileAttributesExA` |
+
+\*MinGW-w64 ships `dirent.h` and `sys/stat.h` but not `pwd.h` / `grp.h`, so
+native Windows builds take the Win32 path; Cygwin / MSYS-runtime toolchains
+with the full POSIX headers keep the POSIX path.
+
+## Build system
+
+**GNU Make** at repo root. Object files are compiled into `build/` and
+`build/tests/`, then linked.
+
+| Target | Output |
+|--------|--------|
+| `make` / `all` | `build/ls-toto` |
+| `make debug` | `build/ls-toto-debug` |
+| `make test` | builds + runs `build/tests/test_core` |
+| `make clean` | removes objects/binaries under `build/` (keeps `.gitkeep`) |
+| `make install` | `install -m 755 build/ls-toto /usr/local/bin` (Linux/macOS) |
+
+**Main sources:** `src/main.c`, `src/ls_toto_cli.c`, `src/ls_toto_emit.c`,
+`src/ls_toto_fs.c`, `src/ls_toto_sort.c`, `src/ls_toto_format.c`,
+`src/ls_toto_out.c`, `src/ls_toto_list.c`
+
+**Test sources (`TEST_SRCS`):** `tests/test_runner.c`, `tests/test_out_stub.c`,
+`tests/test_cli_parse.c`, `tests/test_sort_order.c`, `tests/test_format_mode.c`,
+`tests/test_format_size.c`, `tests/test_fs_readdir.c`
+
+**Linked pure modules (`TEST_LINKED_SRCS`):** `src/ls_toto_cli.c`,
+`src/ls_toto_sort.c`, `src/ls_toto_format.c`
+
+## Dependencies
+
+- **POSIX builds:** libc only (`dirent.h`, `sys/stat.h`, `pwd.h`, `grp.h`,
+  `unistd.h`, `time.h`).
+- **Win32 filesystem builds:** libc + **kernel32** (`FindFirstFileA`,
+  `FindNextFileA`, `GetFileAttributesExA`; linked by default by MinGW).
+
+## Directory layout
+
+```
+ls-toto/
+├── LICENSE.txt          — GNU GPL v2 (full text)
+├── c_version.txt        — C11 / compiler / toolchain documentation
+├── .cursor/rules/
+├── Makefile
+├── README.md
+├── build/
+│   ├── .gitkeep
+│   └── tests/
+│       └── .gitkeep
+├── include/
+│   ├── ls_toto.h
+│   ├── ls_toto_cli.h
+│   ├── ls_toto_emit.h
+│   ├── ls_toto_fs.h
+│   ├── ls_toto_sort.h
+│   ├── ls_toto_format.h
+│   └── ls_toto_out.h
+├── src/
+│   ├── main.c
+│   ├── ls_toto_cli.c
+│   ├── ls_toto_emit.c
+│   ├── ls_toto_fs.c
+│   ├── ls_toto_sort.c
+│   ├── ls_toto_format.c
+│   ├── ls_toto_out.c
+│   └── ls_toto_list.c
+└── tests/
+    ├── test_runner.c
+    ├── test_out_stub.c
+    ├── test_cli_parse.c / .h
+    ├── test_sort_order.c / .h
+    ├── test_format_mode.c / .h
+    ├── test_format_size.c / .h
+    └── test_fs_readdir.c / .h
+```
+
+Build artefacts under `build/` (except `.gitkeep` files) are gitignored.
+
+## Building on Linux / WSL
+
+```sh
+make clean && make && make test
+./build/ls-toto
+```
+
+## Building on Windows
+
+**Recommended:** MSYS2 **UCRT64** or **Git Bash** with UCRT64 `gcc` on `PATH`:
+
+```sh
+pacman -S make mingw-w64-ucrt-x86_64-gcc   # once
+cd /path/to/ls-toto
+make clean && make && make test
+./build/ls-toto
+```
+
+Produces a **native Windows executable** (`build/ls-toto` or
+`build/ls-toto.exe`). Runs in UCRT64, Git Bash, cmd, and PowerShell.
+
+### Git Bash caveat
+
+Put **`/c/msys64/ucrt64/bin` early on `PATH`** (before Git's embedded
+MinGW). Otherwise `make` may pick a compiler without the expected headers or
+fail opaquely. Prefer:
+
+```bash
+PATH="/c/msys64/ucrt64/bin:$PATH" make
+```
+
+## Linking notes
+
+- `main()` lives only in `src/main.c`.
+- Tests link only the pure modules (`ls_toto_cli.c`, `ls_toto_sort.c`,
+  `ls_toto_format.c`) plus `tests/test_out_stub.c`; the POSIX readdir test
+  calls `opendir()` / `readdir()` directly.
+- Debug binary is compiled from sources with `CFLAGS_DEBUG` (not reused release `.o` files).

@@ -1,0 +1,114 @@
+---
+description: Unit test layout and conventions for ls-toto
+globs: ["tests/**/*.c", "tests/**/*.h", "Makefile"]
+alwaysApply: false
+---
+
+# Testing — ls-toto
+
+## Scope
+
+The Makefile `test` target builds and runs **`build/tests/test_core`** (or
+`build/tests/test_core.exe` on Windows).
+
+Tests cover the **pure modules** — option parsing (`ls_toto_cli.c`), sorting
+(`ls_toto_sort.c`), and formatting helpers (`ls_toto_format.c`) — on every
+platform, plus **POSIX directory reading** via `opendir()` / `readdir()` when
+the POSIX headers are available. They do **not** exercise `ls_toto_fs.c`, the
+Win32 `FindFirstFileA` path, `ls_toto_list.c`, or the production `write()` to
+stdout. There are **no** subprocess / integration tests in-tree.
+
+When the build defines **`LS_TOTO_WIN32_FS`**, POSIX-only suites print
+**`SKIP: <name>`** and return — `make test` still exits 0.
+
+## Layout
+
+| File | Role |
+|------|------|
+| `tests/test_runner.c` | `main()` — invokes all suites in fixed order |
+| `tests/test_out_stub.c` | defines `ls_toto_out_*()` into an in-memory buffer so `ls_toto_format.c` links without `ls_toto_out.c` |
+| `tests/test_cli_parse.c` / `.h` | `ls_toto_parse_args()` flags, operands, meta flags, bad options |
+| `tests/test_sort_order.c` / `.h` | name / mtime / size order and reverse |
+| `tests/test_format_mode.c` / `.h` | `ls_toto_format_mode()` 10-char strings |
+| `tests/test_format_size.c` / `.h` | `ls_toto_format_size_human()` rounding |
+| `tests/test_fs_readdir.c` / `.h` | POSIX `opendir(".")` / `readdir()` sanity (`SKIP` on Win32) |
+
+Order in `test_runner.c`: cli_parse → sort_order → format_mode → format_size →
+fs_readdir.
+
+One scenario per `.c` / `.h` pair; headers declare `void test_<module>_<name>_run(void)`.
+
+Test objects and the linked binary live under **`build/tests/`** (not under
+`tests/`).
+
+## Framework
+
+- No external framework — plain C with `<assert.h>`.
+- Each case prints `PASS: <descriptive name>` on success.
+- `assert()` failure → `abort()` → non-zero exit from `make test`.
+
+## Build (from `Makefile`)
+
+```makefile
+TEST_CORE := $(TEST_BUILD_DIR)/test_core   # build/tests/test_core
+TEST_LINKED_SRCS := src/ls_toto_cli.c src/ls_toto_sort.c src/ls_toto_format.c
+
+$(TEST_CORE): $(TEST_OBJS) $(TEST_LINKED_OBJS) $(HDRS) $(TEST_HDRS) | $(TEST_BUILD_DIR)
+	$(CC) $(CFLAGS) -o $@ $(TEST_OBJS) $(TEST_LINKED_OBJS)
+
+test: $(TEST_CORE)
+	./$(TEST_CORE)
+```
+
+Tests link **only** the pure modules (compiled into `build/tests/`), never
+`src/main.c`, `src/ls_toto_fs.c`, `src/ls_toto_out.c`, `src/ls_toto_emit.c`,
+or `src/ls_toto_list.c`. They receive the same release `CFLAGS` as the main
+binary (including `LS_TOTO_WIN32_FS` when applicable).
+
+## Required cases
+
+1. **CLI parse:** `-la` sets long + all; `-h` sets human-readable (not help);
+   `--help` with `--version` → `HELP`; `--v` alone → `VERSION`; `a -l b`
+   compacts operands to `a`, `b` with long set (permutation); `-- -l` makes
+   `-l` an operand; `-z` → `BAD_SHORT` with `'z'`; `--foo` → `BAD_LONG`;
+   last of `-l` / `-1` and `-t` / `-S` wins.
+2. **Sort order:** names `b`, `a`, `C` → `C`, `a`, `b` (`strcmp`); `-t` newest
+   first with name tie-break; `-S` largest first with name tie-break; `-r`
+   reverses each.
+3. **Format mode:** DIR `0755` → `drwxr-xr-x`; REG `0644` → `-rw-r--r--`;
+   LNK `0777` → `lrwxrwxrwx`; `04755` → `-rwsr-xr-x`; `04644` → `-rwSr--r--`;
+   DIR `01777` → `drwxrwxrwt`.
+4. **Format size:** `0` → `0`; `1023` → `1023`; `1024` → `1.0K`; `1025` →
+   `1.1K`; `1536` → `1.5K`; `10240` → `10K`; `10241` → `11K`; `1572864` → `1.5M`.
+5. **Readdir (POSIX only):** `opendir(".")` lists `.` and `..`;
+   `opendir("does-not-exist")` returns NULL with `errno == ENOENT`.
+   `SKIP: fs_readdir` under `LS_TOTO_WIN32_FS`.
+6. Never call `exit()` from a test; use `assert()` or `return` only.
+
+## Adding tests
+
+- Add `tests/test_<module>_<name>.c` + `.h`, declare runner in `.h`, call from
+  `test_runner.c`, append to `TEST_SRCS` in `Makefile`.
+- Wrap POSIX-only code in `#ifndef LS_TOTO_WIN32_FS` with a `SKIP` stub in the
+  `#else` branch.
+- Keep tests allocation-free; stack buffers and string-literal entry names only.
+- If a new pure module is tested, append it to `TEST_LINKED_SRCS`; never link
+  modules that perform real I/O.
+
+## Manual smoke tests (not automated)
+
+After `make`:
+
+```sh
+./build/ls-toto                      # expect: names in ., no dotfiles, exit 0
+./build/ls-toto -la                  # expect: total line, long format incl. . and .., exit 0
+./build/ls-toto -lh build            # expect: human-readable sizes, exit 0
+./build/ls-toto -R src               # expect: src: header, recursive sections, exit 0
+./build/ls-toto -d src               # expect: src, exit 0
+./build/ls-toto -F                   # expect: / on directories, * on executables, exit 0
+./build/ls-toto | cat                # expect: one name per line, exit 0
+./build/ls-toto missing              # expect: cannot access on stderr, exit 2
+./build/ls-toto -z                   # expect: invalid option + hint on stderr, exit 2
+./build/ls-toto --version            # expect: ls-toto <version>, exit 0
+./build/ls-toto --help               # expect: usage text on stdout, exit 0
+```
