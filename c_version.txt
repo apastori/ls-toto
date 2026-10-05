@@ -1,0 +1,48 @@
+ls-toto — C language and toolchain
+==================================
+
+Language standard
+-----------------
+ISO C11, compiled with -std=c11. No C++.
+
+Feature-test macro
+------------------
+-D_XOPEN_SOURCE=700 exposes POSIX.1-2008 plus the XSI option group:
+opendir/readdir, stat/lstat, readlink, getpwuid/getgrgid, isatty, write,
+st_blocks (for the "total" line), and S_ISVTX.
+
+Warnings
+--------
+-Wall -Wextra -Wpedantic -Werror: every warning fails the build.
+
+Optimisation / debugging
+------------------------
+Release: -O2
+Debug:   -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer
+
+Compilers
+---------
+gcc (preferred) or clang, selected automatically by the Makefile.
+On Windows the Makefile prefers C:/msys64/ucrt64/bin/gcc when present.
+
+Build system
+------------
+GNU Make (Makefile at the repository root).
+
+Toolchains
+----------
+Linux / WSL:        gcc or clang + GNU Make; POSIX filesystem path.
+Windows (native):   MSYS2 UCRT64 gcc (mingw-w64-ucrt-x86_64-gcc) + make,
+                    from the UCRT64 shell or Git Bash with
+                    /c/msys64/ucrt64/bin first on PATH. MinGW lacks pwd.h and
+                    grp.h, so the Makefile defines LS_TOTO_WIN32_FS and the
+                    Win32 filesystem API (kernel32) is used.
+
+Note: MSYS2 UCRT64 gcc ships no AddressSanitizer / UBSan runtime, so
+`make debug` links only on Linux / WSL (or another sanitizer-capable
+toolchain).
+
+Libraries
+---------
+POSIX builds: libc only.
+Win32 builds: libc + kernel32 (linked by default).
