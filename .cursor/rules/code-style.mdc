@@ -26,8 +26,8 @@ alwaysApply: false
 - **`src/main.c`** stays thin — call `ls_toto_parse_args()`, dispatch to
   help/version, call `ls_toto_run()`, and exit. No filesystem, sorting, or
   formatting logic.
-- **`include/ls_toto.h`** — version string, exit code enum, and
-  `ls_toto_run()` declaration.
+- **`include/ls_toto.h`** — version string and exit code enum.
+- **`include/ls_toto_list.h`** — `ls_toto_run()` declaration.
 - **`include/ls_toto_cli.h`** — CLI flag string macros (`LS_TOTO_ARG_*`),
   `struct ls_toto_opts`, parser declarations.
 - **One concern per `src/ls_toto_*.c`** (`cli`, `emit`, `fs`, `sort`, `format`,

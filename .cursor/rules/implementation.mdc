@@ -10,13 +10,14 @@ alwaysApply: false
 
 | Path | Role |
 |------|------|
-| `include/ls_toto.h` | `LS_TOTO_VERSION_STRING`, `LS_TOTO_EXIT_*` enum, `ls_toto_run()` declaration |
+| `include/ls_toto.h` | `LS_TOTO_VERSION_STRING`, `LS_TOTO_EXIT_*` enum |
 | `include/ls_toto_cli.h` | `LS_TOTO_ARG_*` flag macros, `struct ls_toto_opts`, `enum ls_toto_parse_status`, `ls_toto_parse_args()`, `print_help()`, `print_version()` |
 | `include/ls_toto_emit.h` | `ls_toto_emit_error()`, `ls_toto_emit_cannot_access()`, `ls_toto_emit_cannot_open_dir()`, `ls_toto_emit_invalid_option()`, `ls_toto_emit_unrecognized_option()` |
 | `include/ls_toto_fs.h` | platform-neutral `struct ls_toto_entry`, `enum ls_toto_ftype`, `ls_toto_fs_stat()`, `ls_toto_fs_read_dir()`, `ls_toto_entries_free()`, `ls_toto_strdup()` |
 | `include/ls_toto_sort.h` | `ls_toto_sort_entries()` |
 | `include/ls_toto_format.h` | `ls_toto_format_mode()`, `ls_toto_format_size_human()`, `ls_toto_format_time()`, `ls_toto_classify_suffix()`, `ls_toto_print_long()`, `ls_toto_print_columns()`, `ls_toto_print_one_per_line()` |
 | `include/ls_toto_out.h` | `ls_toto_out_bytes()`, `ls_toto_out_str()`, `ls_toto_out_char()`, `ls_toto_out_flush()` |
+| `include/ls_toto_list.h` | `ls_toto_run()` declaration |
 | `src/main.c` | `main()` only — parse args, dispatch help/version/errors, call `ls_toto_run()` |
 | `src/ls_toto_cli.c` | `argv_has_exact()`, meta-flag scan, option parser, help/version text (pure) |
 | `src/ls_toto_emit.c` | stderr diagnostics |

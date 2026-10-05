@@ -49,7 +49,7 @@ Keep `README.md` user-focused. Align with `project-overview.mdc` and `implementa
 
 5. **Layout** — brief tree matching actual repo (include `LICENSE.txt`,
    `c_version.txt`, `build/.gitkeep`, `build/tests/.gitkeep`):
-   - `include/ls_toto.h` + `ls_toto_{cli,emit,fs,sort,format,out}.h`
+   - `include/ls_toto.h` + `ls_toto_{cli,emit,fs,sort,format,out,list}.h`
    - `src/main.c` + `ls_toto_{cli,emit,fs,sort,format,out,list}.c`
    - `tests/test_runner.c` + `test_<module>_*.c` → `build/tests/test_core`
    - Note that Windows builds without the POSIX headers skip the POSIX

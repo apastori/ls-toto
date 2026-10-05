@@ -133,7 +133,8 @@ ls-toto/
 │   ├── ls_toto_fs.h
 │   ├── ls_toto_sort.h
 │   ├── ls_toto_format.h
-│   └── ls_toto_out.h
+│   ├── ls_toto_out.h
+│   └── ls_toto_list.h
 ├── src/
 │   ├── main.c
 │   ├── ls_toto_cli.c
