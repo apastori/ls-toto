@@ -118,7 +118,7 @@ ls-toto/
 │   ├── .gitkeep
 │   └── tests/
 │       └── .gitkeep
-├── include/      ls_toto.h + ls_toto_{cli,emit,fs,sort,format,out}.h
+├── include/      ls_toto.h + ls_toto_{cli,emit,fs,sort,format,out,list}.h
 ├── src/          main.c + ls_toto_{cli,emit,fs,sort,format,out,list}.c
 └── tests/        test_runner.c + test_<module>_*.c -> build/tests/test_core
 ```
