@@ -58,18 +58,41 @@ enum ls_toto_meta scan_meta_flags(int argc, char **argv)
 static int apply_short(struct ls_toto_opts *opts, char c)
 {
     switch (c) {
-        case 'a': opts->hidden = LS_TOTO_SHOW_ALL; break;
-        case 'A': opts->hidden = LS_TOTO_SHOW_ALMOST; break;
-        case 'l': opts->layout = LS_TOTO_LAYOUT_LONG; break;
-        case '1': opts->layout = LS_TOTO_LAYOUT_ONE; break;
-        case 'r': opts->reverse = 1; break;
-        case 'R': opts->recursive = 1; break;
-        case 't': opts->sort = LS_TOTO_SORT_TIME; break;
-        case 'S': opts->sort = LS_TOTO_SORT_SIZE; break;
-        case 'h': opts->human = 1; break;
-        case 'd': opts->directory = 1; break;
-        case 'F': opts->classify = 1; break;
-        default: return 0;
+        case 'a':
+            opts->hidden = LS_TOTO_SHOW_ALL;
+            break;
+        case 'A':
+            opts->hidden = LS_TOTO_SHOW_ALMOST;
+            break;
+        case 'l':
+            opts->layout = LS_TOTO_LAYOUT_LONG;
+            break;
+        case '1':
+            opts->layout = LS_TOTO_LAYOUT_ONE;
+            break;
+        case 'r':
+            opts->reverse = 1;
+            break;
+        case 'R':
+            opts->recursive = 1;
+            break;
+        case 't':
+            opts->sort = LS_TOTO_SORT_TIME;
+            break;
+        case 'S':
+            opts->sort = LS_TOTO_SORT_SIZE;
+            break;
+        case 'h':
+            opts->human = 1;
+            break;
+        case 'd':
+            opts->directory = 1;
+            break;
+        case 'F':
+            opts->classify = 1;
+            break;
+        default:
+            return 0;
     }
     return 1;
 }
