@@ -26,7 +26,7 @@ When the build defines **`LS_TOTO_WIN32_FS`**, POSIX-only suites print
 | File | Role |
 |------|------|
 | `tests/test_runner.c` | `main()` — invokes all suites in fixed order |
-| `tests/test_out_stub.c` | defines `ls_toto_out_*()` into an in-memory buffer so `ls_toto_format.c` links without `ls_toto_out.c` |
+| `tests/test_out_stub.c` / `.h` | defines `ls_toto_out_*()` into an in-memory buffer so `ls_toto_format.c` links without `ls_toto_out.c`; the header exposes `test_out_stub_buffer()` / `test_out_stub_reset()` (the only pair without a `_run()` suite) |
 | `tests/test_cli_parse.c` / `.h` | `ls_toto_parse_args()` flags, operands, meta flags, bad options |
 | `tests/test_sort_order.c` / `.h` | name / mtime / size order and reverse |
 | `tests/test_format_mode.c` / `.h` | `ls_toto_format_mode()` 10-char strings |

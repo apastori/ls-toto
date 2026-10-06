@@ -146,7 +146,7 @@ ls-toto/
 │   └── ls_toto_list.c
 └── tests/
     ├── test_runner.c
-    ├── test_out_stub.c
+    ├── test_out_stub.c / .h
     ├── test_cli_parse.c / .h
     ├── test_sort_order.c / .h
     ├── test_format_mode.c / .h
