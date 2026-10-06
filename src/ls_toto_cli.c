@@ -39,7 +39,7 @@ static int end_of_options(int argc, char **argv)
     return pos != 0 ? pos : argc;
 }
 
-static enum ls_toto_parse_status scan_meta_flags(int argc, char **argv)
+enum ls_toto_meta scan_meta_flags(int argc, char **argv)
 {
     int end = end_of_options(argc, argv);
 
@@ -51,7 +51,7 @@ static enum ls_toto_parse_status scan_meta_flags(int argc, char **argv)
         || argv_has_exact(end, argv, LS_TOTO_ARG_VERSION_SHORT)) {
         return LS_TOTO_PARSE_VERSION;
     }
-    return LS_TOTO_PARSE_OK;
+    return LS_TOTO_PARSE_NONE;
 }
 
 /* Apply one short option letter. Returns 0 if c is not a known option. */
@@ -98,46 +98,67 @@ static int apply_long(struct ls_toto_opts *opts, const char *arg)
     return 0;
 }
 
+static void init_options(struct ls_toto_opts *opts)
+{
+    opts->layout = LS_TOTO_LAYOUT_DEFAULT;
+    opts->sort = LS_TOTO_SORT_NAME;
+    opts->hidden = LS_TOTO_HIDE_DOT;
+    opts->reverse = 0;
+    opts->recursive = 0;
+    opts->human = 0;
+    opts->directory = 0;
+    opts->classify = 0;
+    opts->bad_char = '\0';
+    opts->bad_arg = NULL;
+}
+
 enum ls_toto_parse_status ls_toto_parse_args(int argc, char **argv,
                                              struct ls_toto_opts *opts,
                                              int *noperands)
 {
-    static const struct ls_toto_opts defaults = {
-        LS_TOTO_LAYOUT_DEFAULT, LS_TOTO_SORT_NAME, LS_TOTO_HIDE_DOT,
-        0, 0, 0, 0, 0, '\0', NULL
-    };
-    enum ls_toto_parse_status meta;
     int only_operands = 0;
     int n = 0;
-
-    *opts = defaults;
     *noperands = 0;
 
-    meta = scan_meta_flags(argc, argv);
-    if (meta != LS_TOTO_PARSE_OK) {
-        return meta;
-    }
+    init_options(opts);
 
     for (int i = 1; i < argc; i++) {
         char *arg = argv[i];
 
+        // If the argument is not a flag, it is an operand
         if (only_operands || arg[0] != '-' || arg[1] == '\0') {
             argv[1 + n++] = arg;
-        } else if (strcmp(arg, LS_TOTO_ARG_END_OPTS) == 0) {
+            continue;
+        } 
+        
+        // If the argument is --, it means the end of options
+        if (strcmp(arg, LS_TOTO_ARG_END_OPTS) == 0) {
             only_operands = 1;
-        } else if (arg[1] == '-') {
+            continue;
+        } 
+        
+        // If the argument is a long option
+        if (arg[0] == '-' && arg[1] == '-' && arg[2] != '\0') {
             if (!apply_long(opts, arg)) {
                 opts->bad_arg = arg;
                 return LS_TOTO_PARSE_BAD_LONG;
             }
-        } else {
+            continue;
+        } 
+        
+        // If the argument is a short option
+        if (arg[0] == '-' && arg[1] != '-' && arg[1] != '\0') {
             for (const char *p = arg + 1; *p != '\0'; p++) {
                 if (!apply_short(opts, *p)) {
                     opts->bad_char = *p;
                     return LS_TOTO_PARSE_BAD_SHORT;
                 }
             }
+            continue;
         }
+        // If the argument is not a valid option, it is an invalid option
+        opts->bad_arg = arg;
+        return LS_TOTO_PARSE_BAD_LONG;
     }
 
     *noperands = n;

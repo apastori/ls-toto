@@ -34,6 +34,12 @@ enum ls_toto_hidden {
     LS_TOTO_SHOW_ALMOST         /* -A: all except "." and ".." */
 };
 
+enum ls_toto_meta {
+    LS_TOTO_PARSE_NONE,
+    LS_TOTO_PARSE_HELP,
+    LS_TOTO_PARSE_VERSION
+};
+
 struct ls_toto_opts {
     enum ls_toto_layout   layout;
     enum ls_toto_sort_key sort;
@@ -49,11 +55,21 @@ struct ls_toto_opts {
 
 enum ls_toto_parse_status {
     LS_TOTO_PARSE_OK,
-    LS_TOTO_PARSE_HELP,
-    LS_TOTO_PARSE_VERSION,
     LS_TOTO_PARSE_BAD_SHORT,
     LS_TOTO_PARSE_BAD_LONG
 };
+
+/*
+ * Scan argv for the meta flags --help / --h and --version / --v.
+ *
+ * Pre:  argc >= 1, argv[0..argc-1] valid.
+ * Post: returns LS_TOTO_PARSE_HELP if --help or --h appears before "--",
+ *       else LS_TOTO_PARSE_VERSION if --version or --v does,
+ *       else LS_TOTO_PARSE_NONE. Help wins over version. argv is not
+ *       modified; the caller prints help or version.
+ * Pure: performs no I/O.
+ */
+enum ls_toto_meta scan_meta_flags(int argc, char **argv);
 
 /*
  * Parse argv into *opts.
@@ -62,9 +78,9 @@ enum ls_toto_parse_status {
  * Post: on LS_TOTO_PARSE_OK, operands are compacted in their original order
  *       into argv[1 .. *noperands] (GNU permutation: options may follow
  *       operands; everything after "--" is an operand).
- *       On BAD_SHORT / BAD_LONG, opts->bad_char / opts->bad_arg identify
- *       the offending option. Help wins over version; both are detected
- *       anywhere before "--".
+ *       On LS_TOTO_PARSE_BAD_SHORT / LS_TOTO_PARSE_BAD_LONG, opts->bad_char / opts->bad_arg identify
+ *       the offending option. Meta flags are not handled here; call
+ *       scan_meta_flags() first.
  * Pure: performs no I/O.
  */
 enum ls_toto_parse_status ls_toto_parse_args(int argc, char **argv,
