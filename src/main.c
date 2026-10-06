@@ -17,24 +17,33 @@ int main(int argc, char **argv)
 {
     struct ls_toto_opts opts;
     int noperands;
+    enum ls_toto_meta meta_flags;
+    enum ls_toto_parse_status parse_status;
 
-    switch (ls_toto_parse_args(argc, argv, &opts, &noperands)) {
-    case LS_TOTO_PARSE_HELP:
+    meta_flags = scan_meta_flags(argc, argv);
+
+    if (meta_flags == LS_TOTO_PARSE_HELP) {
         print_help();
         return LS_TOTO_EXIT_OK;
-    case LS_TOTO_PARSE_VERSION:
-        print_version();
-        return LS_TOTO_EXIT_OK;
-    case LS_TOTO_PARSE_BAD_SHORT:
-        ls_toto_emit_invalid_option(opts.bad_char);
-        return LS_TOTO_EXIT_SERIOUS;
-    case LS_TOTO_PARSE_BAD_LONG:
-        ls_toto_emit_unrecognized_option(opts.bad_arg);
-        return LS_TOTO_EXIT_SERIOUS;
-    case LS_TOTO_PARSE_OK:
-    default:
-        break;
     }
 
+    if (meta_flags == LS_TOTO_PARSE_VERSION) {
+        print_version();
+        return LS_TOTO_EXIT_OK;
+    }
+
+    parse_status = ls_toto_parse_args(argc, argv, &opts, &noperands);
+
+    if (parse_status == LS_TOTO_PARSE_BAD_SHORT) {
+        ls_toto_emit_invalid_option(opts.bad_char);
+        return LS_TOTO_EXIT_SERIOUS;
+    }
+
+    if (parse_status == LS_TOTO_PARSE_BAD_LONG) {
+        ls_toto_emit_unrecognized_option(opts.bad_arg);
+        return LS_TOTO_EXIT_SERIOUS;
+    }
+    
+    // parse_status is OK, so we can run the command
     return ls_toto_run(&opts, noperands, argv + 1);
 }
